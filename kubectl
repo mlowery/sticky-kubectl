@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+##################################################
+#                Sticky Kubectl                  #
+##################################################
+set -euo pipefail
+
+function echo_yellow {
+    echo ${yellow}${@-}${reset}
+}
+
+yellow=$(tput setaf 3)
+reset=$(tput sgr0)
+
+# here's the actual kubectl we're wrapping
+_kubectl=/usr/local/bin/kubectl
+
+# kubectl does not like the colon character so replace it
+d=/tmp/sticky_kubectl/${TERM_SESSION_ID//:/-}
+KUBECONFIG=$d/config
+kubeconfig_arg=--kubeconfig=$KUBECONFIG
+
+# copy the original config so we can modify the copy
+mkdir -p $d
+if [[ ! -f $d/config ]]; then 
+    cp ~/.kube/config $KUBECONFIG
+fi
+
+# dirty check
+mine=$(mktemp)
+orig=$(mktemp)
+# remove current context since we expect this to be different between mine and orig
+cat $KUBECONFIG | grep -v "^current-context: " > $mine
+cat ~/.kube/config | grep -v "^current-context: " > $orig
+if ! /usr/bin/diff $mine $orig &> /dev/null; then
+    >&2 echo_yellow "WARN: $KUBECONFIG and ~/.kube/config files differ."
+    >&2 echo_yellow "To discard your copy: cp ~/.kube/config $KUBECONFIG"
+    >&2 echo_yellow "To persist your copy: cp $KUBECONFIG ~/.kube/config"
+fi
+
+# optional prompt decoration
+prompt() {
+    ns=$($_kubectl $kubeconfig_arg config view --minify -o jsonpath='{.contexts[0].context.namespace}')
+    if [[ ! $ns ]]; then
+        ns=default
+    fi
+    ctx=$($_kubectl $kubeconfig_arg config current-context)
+    printf "%s:%s" $ctx $ns > /tmp/sticky_kubectl/${TERM_SESSION_ID//:/-}/prompt
+}
+
+trap prompt EXIT
+
+# optional proxy enable
+#export HTTP_PROXY=x HTTPS_PROXY=y
+
+# use KUBECONFIG except for config subcommand since it does not respect KUBECONFIG env var
+# https://github.com/kubernetes/kubernetes/blob/a9c7529f990159ef327716e7c61984d5b7197115/staging/src/k8s.io/client-go/tools/clientcmd/config.go#L372
+if [[ $1 =~ ^config$ ]]; then
+    $_kubectl $kubeconfig_arg "${@-}"
+else
+    export KUBECONFIG
+    $_kubectl "${@-}"
+fi
