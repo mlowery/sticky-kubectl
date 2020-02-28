@@ -33,6 +33,7 @@ orig=$(mktemp)
 cat $KUBECONFIG | grep -v "^current-context: " > $mine
 cat ~/.kube/config | grep -v "^current-context: " > $orig
 if ! /usr/bin/diff $mine $orig &> /dev/null; then
+    # write to stderr so as not to affect any piped output from kubectl
     >&2 echo_yellow "WARN: $KUBECONFIG and ~/.kube/config files differ."
     >&2 echo_yellow "To discard your copy: cp ~/.kube/config $KUBECONFIG"
     >&2 echo_yellow "To persist your copy: cp $KUBECONFIG ~/.kube/config"
